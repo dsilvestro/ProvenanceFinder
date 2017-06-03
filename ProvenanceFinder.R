@@ -8,7 +8,7 @@ get_std_CI <- function(m,M){
 	return(std)
 }
 
-plot_LSP <- function(source_i,target_samples,unif_samples,source_name,base_prob,low_Y_axis=-1500,high_Y_axis=10,log_prob=T,plot_target=T){
+plot_LSP <- function(source_i,target_samples,unif_samples,source_name,base_prob,low_Y_axis=-1500,high_Y_axis=10,log_prob=T,plot_target=T,return_lik=F){
 	# plot Likelihood surface
 	sample_Pr = c(base_prob)
 	for (i in 1:dim(source_i)[1]){
@@ -21,18 +21,22 @@ plot_LSP <- function(source_i,target_samples,unif_samples,source_name,base_prob,
 	}
 	sample_Pr=log(sample_Pr/(dim(source_i)[1]+1))
 	sample_Pr[sample_Pr<small_log_number]=small_log_number
-	if (log_prob==F){
-		plot(exp(sample_Pr)~ unif_samples,type="l",main=paste("Likelihood surface plot -", source_name),ylab="Probability",xlab="Time",ylim=c(low_Y_axis,high_Y_axis))
+	if (return_lik==T){
+		return( sample_Pr )
 	}else{
-		plot(sample_Pr~ unif_samples,type="l",main=paste("Likelihood surface plot -", source_name), ylim=c(low_Y_axis,high_Y_axis),ylab="Log Likelihood",xlab="Time")	
-	}
-	if (plot_target==T){
-		points(x=target_samples,y=rep(0,length(target_samples)),col="darkred",pch=20)
-	}
-	for (i in 1:(dim(source_i)[1])){
-		m = source_i$lower_confidence[i]
-		M = source_i$upper_confidence[i]
-		segments(x0=m,x1=M,y0=low_Y_axis,y1=low_Y_axis,lwd=4,col="darkblue")
+		if (log_prob==F){
+			plot(exp(sample_Pr)~ unif_samples,type="l",main=paste("Likelihood surface plot -", source_name),ylab="Probability",xlab="Time",ylim=c(low_Y_axis,high_Y_axis))
+		}else{
+			plot(sample_Pr~ unif_samples,type="l",main=paste("Likelihood surface plot -", source_name), ylim=c(low_Y_axis,high_Y_axis),ylab="Log Likelihood",xlab="Time")	
+		}
+		if (plot_target==T){
+			points(x=target_samples,y=rep(0,length(target_samples)),col="darkred",pch=20)
+		}
+		for (i in 1:(dim(source_i)[1])){
+			m = source_i$lower_confidence[i]
+			M = source_i$upper_confidence[i]
+			segments(x0=m,x1=M,y0=low_Y_axis,y1=low_Y_axis,lwd=4,col="darkblue")
+		}
 	}
 	
 }
@@ -101,9 +105,10 @@ get_likelihood_mixed_model <- function(exp_Pr_tbl,output_summary_file){
 	}
 }
 
-run_provenance_estimation <- function(t,name_target_sample,output_name="provenance",n_points=10000){
+run_provenance_estimation <- function(t,name_target_sample,output_name="provenance",n_points=10000,plot_LS=T,plot_CORR=T,optLik=T){
 	# name output files
 	LSP_file            = paste(output_name,"_lik_surface_plots.pdf",sep="")
+	CORR_file           = paste(output_name,"_source_correlation.pdf",sep="")
 	log_lik_file        = paste(output_name,"_logLikelihood_table.txt",sep="")
 	rel_prob_file       = paste(output_name,"_relProbability_table.txt",sep="")
 	output_summary_file = paste(output_name,"_Summary.txt",sep="")
@@ -129,64 +134,90 @@ run_provenance_estimation <- function(t,name_target_sample,output_name="provenan
 	}	
 
 	# PLOT LIK SURFACE
-	cat("\nGenerating likelihood surface plots...")
-	pdf(file=LSP_file,height=6,width=9)
-	for (s in sources){	
-		plot_LSP(t[t$Source==s,],target_sample_m,unif_samples,s,low_Y_axis=-15,2,log=T,base_prob = baseline_uniform_pdf)
-	}
-	n <- dev.off()
-	cat("done.")
-	# CALC LIK of DATA GIVEN EACH SOURCE
-	cat("\nCalculating likelihood of the data for each source...")
-	sources = sources[sources != name_target_sample]
-	Pr_tbl = NULL
-	Pr_tbl_null = NULL	
-	cat("Source\tlogLikelihood\n",file= output_summary_file,append=F)
-	for (s in sources){
-		source_i = t[t$Source==s,]
-		Pr_source_i = c()
-		Pr_source_i_null = c()
-		for (j in 1:dim(target_sample)[1]){
-			ms_m = target_sample_m[j]
-			ms_s = target_sample_s[j]
-			Pr_source_i_list = get_prob_analytical_uncertainty(source_i,ms_m,ms_s,unif_samples,s,baseline_uniform_pdf)
-			Pr_source_i = c(Pr_source_i, Pr_source_i_list[[1]])
-			# Probability of a sample based only on the background uniform PDF, i.e. no contribution from the source's samples
-			Pr_source_i_null = c(Pr_source_i_null,Pr_source_i_list[[2]])
+	if (plot_LS==T){
+		cat("\nGenerating likelihood surface plots...")
+		pdf(file=LSP_file,height=6,width=9)
+		for (s in sources){	
+			plot_LSP(t[t$Source==s,],target_sample_m,unif_samples,s,low_Y_axis=-15,high_Y_axis=2,log=T,base_prob = baseline_uniform_pdf)
 		}
-		Pr_tbl = cbind(Pr_tbl,Pr_source_i)
-		Pr_tbl_null =  cbind(Pr_tbl_null,Pr_source_i_null)
-		cat(s, sum(Pr_source_i), "\n",file= output_summary_file,append=T,sep="\t")
+		n <- dev.off()
+		cat("done.")
 	}
-	colnames(Pr_tbl)=c(sources)
 	
-	# count number of samples with (likely) unknown source
-	#exp_Pr_tbl_temp = exp_Pr_tbl                               # background probability for each source (uniform pdf)
-	#for (i in 1:dim(exp_Pr_tbl)[2]){                           # samples with probablity ~ bkg prob for all sources 
-	#	exp_Pr_tbl_temp[exp_Pr_tbl_temp<=exp(bkgProb[i])]=0  # are likely to come from an unknown source
-	#}
-	tbl_null=Pr_tbl*0
-	Pr_tbl_null = log(exp(Pr_tbl_null)+exp(Pr_tbl_null)*0.05)
-	tbl_null[Pr_tbl>(Pr_tbl_null)]=1
+	if (plot_CORR==T){
+		cat("\nGenerating correlation plots...")
+		j=1
+		sources_temp = sources[sources != name_target_sample]
+		for (s in sources_temp){	
+			temp = plot_LSP(t[t$Source==s,],target_sample_m,unif_samples,s,base_prob = baseline_uniform_pdf,return_lik=T)
+			temp = as.data.frame(temp)
+			colnames(temp)=s
+			if (j==1) {prob_tbl=temp}
+			if (j>1) {prob_tbl = cbind(prob_tbl,temp)}
+			j= j+1
+		}
+		# Estimate if there is correlation between sources
+		pdf(file=CORR_file,height=12,width=12)
+		pairs(prob_tbl,pch=19,col="darkblue",lower.panel=NULL,main="Correlation between likelihood surfaces")
+		dev.off()
+		cat("done.")
+
+		
+	}
 	
-	zero_prob = which(apply(tbl_null,FUN=sum,1)==0)
-	cat("\n\nNote:",length(zero_prob), "samples are likely to come from unknown sources (5% threshold):\n", zero_prob,file=output_summary_file,append=T)	
-	cat("done.\nOutput saved in:",output_summary_file,sep=" ")	
+	# CALC LIK of DATA GIVEN EACH SOURCE
+	if (optLik==T){
+		cat("\nCalculating likelihood of the data for each source...")
+		sources = sources[sources != name_target_sample]
+		Pr_tbl = NULL
+		Pr_tbl_null = NULL	
+		cat("Source\tlogLikelihood\n",file= output_summary_file,append=F)
+		for (s in sources){
+			source_i = t[t$Source==s,]
+			Pr_source_i = c()
+			Pr_source_i_null = c()
+			for (j in 1:dim(target_sample)[1]){
+				ms_m = target_sample_m[j]
+				ms_s = target_sample_s[j]
+				Pr_source_i_list = get_prob_analytical_uncertainty(source_i,ms_m,ms_s,unif_samples,s,baseline_uniform_pdf)
+				Pr_source_i = c(Pr_source_i, Pr_source_i_list[[1]])
+				# Probability of a sample based only on the background uniform PDF, i.e. no contribution from the source's samples
+				Pr_source_i_null = c(Pr_source_i_null,Pr_source_i_list[[2]])
+			}
+			Pr_tbl = cbind(Pr_tbl,Pr_source_i)
+			Pr_tbl_null =  cbind(Pr_tbl_null,Pr_source_i_null)
+			cat(s, sum(Pr_source_i), "\n",file= output_summary_file,append=T,sep="\t")
+		}
+		colnames(Pr_tbl)=c(sources)
+	
+		# count number of samples with (likely) unknown source
+		#exp_Pr_tbl_temp = exp_Pr_tbl                               # background probability for each source (uniform pdf)
+		#for (i in 1:dim(exp_Pr_tbl)[2]){                           # samples with probablity ~ bkg prob for all sources 
+		#	exp_Pr_tbl_temp[exp_Pr_tbl_temp<=exp(bkgProb[i])]=0  # are likely to come from an unknown source
+		#}
+		tbl_null=Pr_tbl*0
+		Pr_tbl_null = log(exp(Pr_tbl_null)+exp(Pr_tbl_null)*0.05)
+		tbl_null[Pr_tbl>(Pr_tbl_null)]=1
+	
+		zero_prob = which(apply(tbl_null,FUN=sum,1)==0)
+		cat("\n\nNote:",length(zero_prob), "samples are likely to come from unknown sources (5% threshold):\n", zero_prob,file=output_summary_file,append=T)	
+		cat("done.\nOutput saved in:",output_summary_file,sep=" ")	
 	
 	
 	
-	# save table with log likelihoods per sample
-	write.table(Pr_tbl,file=log_lik_file,row.names = F, sep="\t",quote=F)
+		# save table with log likelihoods per sample
+		write.table(Pr_tbl,file=log_lik_file,row.names = F, sep="\t",quote=F)
 	
-	# save table with relative probabilities
-	exp_Pr_tbl = exp(Pr_tbl)
-	den = apply(exp_Pr_tbl,1,FUN=sum)
-	rel_Pr_tbl = exp_Pr_tbl/den
-	write.table(round(rel_Pr_tbl,5),file=rel_prob_file,row.names = F, sep="\t",quote=F)
-	cat("done.\nOutput saved as:",output_summary_file,log_lik_file, rel_prob_file,sep=" ")
-	# run mixed model 
-	get_likelihood_mixed_model(exp(Pr_tbl),output_summary_file)
-	cat("done.\nOutput saved in:",output_summary_file,sep=" ")	
+		# save table with relative probabilities
+		exp_Pr_tbl = exp(Pr_tbl)
+		den = apply(exp_Pr_tbl,1,FUN=sum)
+		rel_Pr_tbl = exp_Pr_tbl/den
+		write.table(round(rel_Pr_tbl,5),file=rel_prob_file,row.names = F, sep="\t",quote=F)
+		cat("done.\nOutput saved as:",output_summary_file,log_lik_file, rel_prob_file,sep=" ")
+		# run mixed model 
+		get_likelihood_mixed_model(exp(Pr_tbl),output_summary_file)
+		cat("done.\nOutput saved in:",output_summary_file,sep=" ")	
+	}
 }
 
 
