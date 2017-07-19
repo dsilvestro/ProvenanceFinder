@@ -1,5 +1,6 @@
 ### FUNCTIONS
 small_log_number = -100
+library(scales)
 
 get_std_CI <- function(m,M){
 	"Std that yields 95% CI = {m, M}"
@@ -78,7 +79,7 @@ get_prob_analytical_uncertainty <- function(source_i,ms_m,ms_s,unif_samples,sour
 	if (return_prob==T){
 		return(list(h1_prob,y))
 	}else{
-		return(list(h1_prob,log(f_null_integral)))
+		return(list(h1_prob,log(f_null_integral),y))
 	}
 }
 
@@ -109,6 +110,7 @@ run_provenance_estimation <- function(t,name_target_sample,output_name="provenan
 	# name output files
 	LSP_file            = paste(output_name,"_lik_surface_plots.pdf",sep="")
 	CORR_file           = paste(output_name,"_source_correlation.pdf",sep="")
+	PROB_file           = paste(output_name,"_prob_data.pdf",sep="")
 	log_lik_file        = paste(output_name,"_logLikelihood_table.txt",sep="")
 	rel_prob_file       = paste(output_name,"_relProbability_table.txt",sep="")
 	output_summary_file = paste(output_name,"_Summary.txt",sep="")
@@ -144,6 +146,7 @@ run_provenance_estimation <- function(t,name_target_sample,output_name="provenan
 		cat("done.")
 	}
 	
+	# PLOT CORRELATION BETWEEN SOURCES
 	if (plot_CORR==T){
 		cat("\nGenerating correlation plots...")
 		j=1
@@ -156,7 +159,6 @@ run_provenance_estimation <- function(t,name_target_sample,output_name="provenan
 			if (j>1) {prob_tbl = cbind(prob_tbl,temp)}
 			j= j+1
 		}
-		# Estimate if there is correlation between sources
 		pdf(file=CORR_file,height=12,width=12)
 		pairs(prob_tbl,pch=19,col="darkblue",lower.panel=NULL,main="Correlation between likelihood surfaces")
 		dev.off()
@@ -172,10 +174,12 @@ run_provenance_estimation <- function(t,name_target_sample,output_name="provenan
 		Pr_tbl = NULL
 		Pr_tbl_null = NULL	
 		cat("Source\tlogLikelihood\n",file= output_summary_file,append=F)
+		pdf(file=PROB_file,height=6,width=9)
 		for (s in sources){
 			source_i = t[t$Source==s,]
 			Pr_source_i = c()
 			Pr_source_i_null = c()
+			Pr_for_plot =rep(0,n_points)
 			for (j in 1:dim(target_sample)[1]){
 				ms_m = target_sample_m[j]
 				ms_s = target_sample_s[j]
@@ -183,13 +187,21 @@ run_provenance_estimation <- function(t,name_target_sample,output_name="provenan
 				Pr_source_i = c(Pr_source_i, Pr_source_i_list[[1]])
 				# Probability of a sample based only on the background uniform PDF, i.e. no contribution from the source's samples
 				Pr_source_i_null = c(Pr_source_i_null,Pr_source_i_list[[2]])
+				Pr_for_plot = Pr_for_plot + Pr_source_i_list[[3]]
 			}
+			minProb_plotted = 12
+			Pr_for_plot[Pr_for_plot< exp(-minProb_plotted)]=exp(-minProb_plotted)
+			logPr_for_plot = log(Pr_for_plot)
+			plot(log(Pr_for_plot)~unif_samples,type="n",main=s, ylim=c(-(minProb_plotted+2),-4),xlab="Time",ylab="Log Probability")
+			polygon( x =  c(unif_samples,rev(unif_samples)), y = c(logPr_for_plot,rep(-minProb_plotted,length(unif_samples))),col=alpha("darkblue",0.3),border=NA)
+			points(x=target_sample_m,y=rep(-(minProb_plotted+1),length(target_sample_m)),col="darkred",pch=20)
+			points(x=source_i$Age,y=rep(-(minProb_plotted+1.5),length(source_i$Age)),col="darkblue",pch=20)
 			Pr_tbl = cbind(Pr_tbl,Pr_source_i)
 			Pr_tbl_null =  cbind(Pr_tbl_null,Pr_source_i_null)
 			cat(s, sum(Pr_source_i), "\n",file= output_summary_file,append=T,sep="\t")
 		}
 		colnames(Pr_tbl)=c(sources)
-	
+		dev.off()
 		# count number of samples with (likely) unknown source
 		#exp_Pr_tbl_temp = exp_Pr_tbl                               # background probability for each source (uniform pdf)
 		#for (i in 1:dim(exp_Pr_tbl)[2]){                           # samples with probablity ~ bkg prob for all sources 
