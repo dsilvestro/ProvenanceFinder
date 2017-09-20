@@ -106,7 +106,11 @@ get_likelihood_mixed_model <- function(exp_Pr_tbl,output_summary_file){
 	}
 }
 
-run_provenance_estimation <- function(tbl,name_target_sample,output_name="provenance",n_points=10000,plot_PDF=T,plot_CORR=T,calcProb=T,runJK=1000){
+run_provenance_estimation <- function(provenance_file,name_target_sample,n_points=10000,plot_PDF=T,plot_CORR=T,calcProb=T,runJK=1000){
+	# read input file and define output name 
+	tbl  <- read.table(provenance_file,h=T,stringsAsFactors=F)
+	output_name <- tools::file_path_sans_ext(provenance_file) # same name input file
+	
 	# name output files
 	LSP_file            = paste(output_name,"_prob_density_plots.pdf",sep="")
 	CORR_file           = paste(output_name,"_source_correlation.pdf",sep="")
