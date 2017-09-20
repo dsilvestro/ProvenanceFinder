@@ -106,24 +106,24 @@ get_likelihood_mixed_model <- function(exp_Pr_tbl,output_summary_file){
 	}
 }
 
-run_provenance_estimation <- function(t,name_target_sample,output_name="provenance",n_points=10000,plot_LS=T,plot_CORR=T,optLik=T){
+run_provenance_estimation <- function(tbl,name_target_sample,output_name="provenance",n_points=10000,plot_PDF=T,plot_CORR=T,calcProb=T,runJK=1000){
 	# name output files
-	LSP_file            = paste(output_name,"_lik_surface_plots.pdf",sep="")
+	LSP_file            = paste(output_name,"_prob_density_plots.pdf",sep="")
 	CORR_file           = paste(output_name,"_source_correlation.pdf",sep="")
 	PROB_file           = paste(output_name,"_prob_data.pdf",sep="")
 	log_lik_file        = paste(output_name,"_logLikelihood_table.txt",sep="")
 	rel_prob_file       = paste(output_name,"_relProbability_table.txt",sep="")
 	output_summary_file = paste(output_name,"_Summary.txt",sep="")
 	
-	obs_time_range = c(min(t$lower_confidence), max(t$upper_confidence))
-	sources = unique(t$Source)
+	obs_time_range = c(min(tbl$lower_confidence), max(tbl$upper_confidence))
+	sources = unique(tbl$Source)
 	# points delimiting the bins
 	unif_samples = seq(obs_time_range[1],obs_time_range[2],length.out=n_points)
 	# set baseline uniform probability
 	baseline_uniform_pdf = rep(1/diff(obs_time_range),length(unif_samples))
 
 	### ACCOUNT FOR CI IN TARGET SAMPLE
-	target_sample = t[t$Source==name_target_sample,]
+	target_sample = tbl[tbl$Source==name_target_sample,]
 	#target_sample = target_sample[order(target_sample$Age),]
 	target_sample_m = c()
 	target_sample_s = c()
@@ -136,11 +136,11 @@ run_provenance_estimation <- function(t,name_target_sample,output_name="provenan
 	}	
 
 	# PLOT LIK SURFACE
-	if (plot_LS==T){
+	if (plot_PDF==T){
 		cat("\nGenerating likelihood surface plots...")
 		pdf(file=LSP_file,height=6,width=9)
 		for (s in sources){	
-			plot_LSP(t[t$Source==s,],target_sample_m,unif_samples,s,low_Y_axis=-15,high_Y_axis=2,log=T,base_prob = baseline_uniform_pdf)
+			plot_LSP(tbl[tbl$Source==s,],target_sample_m,unif_samples,s,low_Y_axis=-15,high_Y_axis=2,log=T,base_prob = baseline_uniform_pdf)
 		}
 		n <- dev.off()
 		cat("done.")
@@ -152,7 +152,7 @@ run_provenance_estimation <- function(t,name_target_sample,output_name="provenan
 		j=1
 		sources_temp = sources[sources != name_target_sample]
 		for (s in sources_temp){	
-			temp = plot_LSP(t[t$Source==s,],target_sample_m,unif_samples,s,base_prob = baseline_uniform_pdf,return_lik=T)
+			temp = plot_LSP(tbl[tbl$Source==s,],target_sample_m,unif_samples,s,base_prob = baseline_uniform_pdf,return_lik=T)
 			temp = as.data.frame(temp)
 			colnames(temp)=s
 			if (j==1) {prob_tbl=temp}
@@ -168,7 +168,7 @@ run_provenance_estimation <- function(t,name_target_sample,output_name="provenan
 	}
 	
 	# CALC LIK of DATA GIVEN EACH SOURCE
-	if (optLik==T){
+	if (calcProb==T){
 		cat("\nCalculating likelihood of the data for each source...")
 		sources = sources[sources != name_target_sample]
 		Pr_tbl = NULL
@@ -176,7 +176,7 @@ run_provenance_estimation <- function(t,name_target_sample,output_name="provenan
 		cat("Source\tlogLikelihood\n",file= output_summary_file,append=F)
 		pdf(file=PROB_file,height=6,width=9)
 		for (s in sources){
-			source_i = t[t$Source==s,]
+			source_i = tbl[tbl$Source==s,]
 			Pr_source_i = c()
 			Pr_source_i_null = c()
 			Pr_for_plot =rep(0,n_points)
@@ -230,6 +230,50 @@ run_provenance_estimation <- function(t,name_target_sample,output_name="provenan
 		get_likelihood_mixed_model(exp(Pr_tbl),output_summary_file)
 		cat("done.\nOutput saved in:",output_summary_file,sep=" ")	
 	}
+
+
+	# RUN JACK KNIFE
+	if (runJK > 0){
+		cat("\nJackknifing data...\n")
+		sources = sources[sources != name_target_sample]
+		min_samples_per_source = min(table(tbl$Source))
+		Pr_tbl = NULL
+		if (calcProb==T){
+			cat("\nSource\tJackknife support\n",file= output_summary_file,append=T)
+		}else{
+			cat("\nSource\tJackknife support\n",file= output_summary_file,append=F)
+		}
+		for (bs_rep in 1:runJK){
+			if (bs_rep %% 10==0){print(bs_rep)}
+			# sub-sample also target sample
+			indx_target_samples = sort(sample(1:dim(target_sample)[1],min_samples_per_source))
+			prob_per_replicate = c()
+			for (s in sources){
+				source_i_complete = tbl[tbl$Source==s,]
+				source_i = source_i_complete[sort(sample(1:dim(source_i_complete)[1],min_samples_per_source)),]
+				Pr_source_i = c()
+				for (j in indx_target_samples){
+					ms_m = target_sample_m[j]
+					ms_s = target_sample_s[j]
+					Pr_source_i_list = get_prob_analytical_uncertainty(source_i,ms_m,ms_s,unif_samples,s,baseline_uniform_pdf)
+					Pr_source_i = c(Pr_source_i, Pr_source_i_list[[1]])
+				}
+				prob_per_replicate = c(prob_per_replicate,sum(Pr_source_i))
+			}
+		Pr_tbl = rbind(Pr_tbl, prob_per_replicate)
+		
+		}
+	Pr_tbl = as.data.frame(Pr_tbl)
+	JK_res =apply(Pr_tbl,1,which.max)
+	for (j in 1:length(sources)){
+		cat(sources[j],length(JK_res[JK_res==j])/runJK,"\n",sep="\t",file =output_summary_file,append=T)
+	}
+	cat("done.\nOutput saved in:",output_summary_file,sep=" ")	
+	}
+
+
+
 }
+
 
 
