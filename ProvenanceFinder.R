@@ -9,7 +9,7 @@ get_std_CI <- function(m,M){
 	return(std)
 }
 
-plot_LSP <- function(source_i,target_samples,unif_samples,source_name,base_prob,low_Y_axis=-1500,high_Y_axis=10,log_prob=T,plot_target=T,return_lik=F){
+plot_LSP <- function(source_i,target_samples,unif_samples,source_name,base_prob,low_Y_axis=NULL,high_Y_axis=NULL,log_prob=T,plot_target=T,return_lik=F){
 	# plot Likelihood surface
 	sample_Pr = c(base_prob)
 	for (i in 1:dim(source_i)[1]){
@@ -22,16 +22,28 @@ plot_LSP <- function(source_i,target_samples,unif_samples,source_name,base_prob,
 	}
 	sample_Pr=log(sample_Pr/(dim(source_i)[1]+1))
 	sample_Pr[sample_Pr<small_log_number]=small_log_number
+	if (length(low_Y_axis)==0){ # if Yaxis == NULL
+		if (log_prob==F){
+			minP = min(exp(sample_Pr))
+			maxP = max(exp(sample_Pr))
+		}else{
+			minP = min(sample_Pr)
+			maxP = max(sample_Pr)
+		}
+		low_Y_axis  = minP - (maxP-minP)*0.05
+		high_Y_axis = maxP + (maxP-minP)*0.05
+		print(c(high_Y_axis,low_Y_axis))
+	}
 	if (return_lik==T){
 		return( sample_Pr )
 	}else{
 		if (log_prob==F){
-			plot(exp(sample_Pr)~ unif_samples,type="l",main=paste("Likelihood surface plot -", source_name),ylab="Probability",xlab="Time",ylim=c(low_Y_axis,high_Y_axis))
+			plot(exp(sample_Pr)~ unif_samples,type="l",main=paste("Probability density plot -", source_name),ylab="Relative probability",xlab="Time",ylim=c(low_Y_axis,high_Y_axis))
 		}else{
-			plot(sample_Pr~ unif_samples,type="l",main=paste("Likelihood surface plot -", source_name), ylim=c(low_Y_axis,high_Y_axis),ylab="Log Likelihood",xlab="Time")	
+			plot(sample_Pr~ unif_samples,type="l",main=paste("Probability density plot -", source_name), ylim=c(low_Y_axis,high_Y_axis),ylab="Relative log probability",xlab="Time")	
 		}
 		if (plot_target==T){
-			points(x=target_samples,y=rep(0,length(target_samples)),col="darkred",pch=20)
+			points(x=target_samples,y=rep(high_Y_axis,length(target_samples)),col="darkred",pch=20)			
 		}
 		for (i in 1:(dim(source_i)[1])){
 			m = source_i$lower_confidence[i]
@@ -106,7 +118,7 @@ get_likelihood_mixed_model <- function(exp_Pr_tbl,output_summary_file){
 	}
 }
 
-run_provenance_estimation <- function(provenance_file,name_target_sample,n_points=10000,plot_PDF=T,plot_CORR=T,calcProb=T,runJK=1000){
+run_provenance_estimation <- function(provenance_file,name_target_sample,n_points=10000,plot_PDF=T,plot_CORR=T,calcProb=T,runJK=1000,Y_axis = c(NULL,NULL),plot_Log=T){
 	# read input file and define output name 
 	tbl  <- read.table(provenance_file,h=T,stringsAsFactors=F)
 	output_name <- tools::file_path_sans_ext(provenance_file) # same name input file
@@ -115,7 +127,7 @@ run_provenance_estimation <- function(provenance_file,name_target_sample,n_point
 	LSP_file            = paste(output_name,"_prob_density_plots.pdf",sep="")
 	CORR_file           = paste(output_name,"_source_correlation.pdf",sep="")
 	PROB_file           = paste(output_name,"_prob_data.pdf",sep="")
-	log_lik_file        = paste(output_name,"_logLikelihood_table.txt",sep="")
+	log_lik_file        = paste(output_name,"_logProbability_table.txt",sep="")
 	rel_prob_file       = paste(output_name,"_relProbability_table.txt",sep="")
 	output_summary_file = paste(output_name,"_Summary.txt",sep="")
 	
@@ -141,10 +153,10 @@ run_provenance_estimation <- function(provenance_file,name_target_sample,n_point
 
 	# PLOT LIK SURFACE
 	if (plot_PDF==T){
-		cat("\nGenerating likelihood surface plots...")
+		cat("\nGenerating probability density plots...")
 		pdf(file=LSP_file,height=6,width=9)
 		for (s in sources){	
-			plot_LSP(tbl[tbl$Source==s,],target_sample_m,unif_samples,s,low_Y_axis=-15,high_Y_axis=2,log=T,base_prob = baseline_uniform_pdf)
+			plot_LSP(tbl[tbl$Source==s,],target_sample_m,unif_samples,s,low_Y_axis=Y_axis[1],high_Y_axis=Y_axis[2],log=plot_Log,base_prob = baseline_uniform_pdf)
 		}
 		n <- dev.off()
 		cat("done.")
@@ -193,13 +205,18 @@ run_provenance_estimation <- function(provenance_file,name_target_sample,n_point
 				Pr_source_i_null = c(Pr_source_i_null,Pr_source_i_list[[2]])
 				Pr_for_plot = Pr_for_plot + Pr_source_i_list[[3]]
 			}
-			minProb_plotted = 12
+			
+			minProb_plotted = -min(log(Pr_for_plot))*0.075
 			Pr_for_plot[Pr_for_plot< exp(-minProb_plotted)]=exp(-minProb_plotted)
 			logPr_for_plot = log(Pr_for_plot)
-			plot(log(Pr_for_plot)~unif_samples,type="n",main=s, ylim=c(-(minProb_plotted+2),-4),xlab="Time",ylab="Log Probability")
+			minP = min(logPr_for_plot)
+			maxP = max(logPr_for_plot)
+			low_Y_axis  = minP - (maxP-minP)*0.1
+			high_Y_axis = maxP
+			plot(log(Pr_for_plot)~unif_samples,type="n",main=s, ylim=c(low_Y_axis,high_Y_axis),xlab="Time",ylab="Log Probability")
 			polygon( x =  c(unif_samples,rev(unif_samples)), y = c(logPr_for_plot,rep(-minProb_plotted,length(unif_samples))),col=alpha("darkblue",0.3),border=NA)
-			points(x=target_sample_m,y=rep(-(minProb_plotted+1),length(target_sample_m)),col="darkred",pch=20)
-			points(x=source_i$Age,y=rep(-(minProb_plotted+1.5),length(source_i$Age)),col="darkblue",pch=20)
+			points(x=target_sample_m,y=rep((minP - (maxP-minP)*0.03),length(target_sample_m)),col="darkred",pch=20)
+			points(x=source_i$Age,y=rep((minP - (maxP-minP)*0.06),length(source_i$Age)),col="darkblue",pch=20)
 			Pr_tbl = cbind(Pr_tbl,Pr_source_i)
 			Pr_tbl_null =  cbind(Pr_tbl_null,Pr_source_i_null)
 			cat(s, sum(Pr_source_i), "\n",file= output_summary_file,append=T,sep="\t")
@@ -234,7 +251,6 @@ run_provenance_estimation <- function(provenance_file,name_target_sample,n_point
 		get_likelihood_mixed_model(exp(Pr_tbl),output_summary_file)
 		cat("done.\nOutput saved in:",output_summary_file,sep=" ")	
 	}
-
 
 	# RUN JACK KNIFE
 	if (runJK > 0){
