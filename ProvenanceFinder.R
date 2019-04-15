@@ -111,7 +111,7 @@ get_likelihood_mixed_model <- function(exp_Pr_tbl,output_summary_file){
 	resMixed = optim(fn=calcLikMixedModel,par=c(rgamma(n=dim2,shape=rep(1,dim2))),dim1=dim1,dim2=dim2,exp_Pr_tbl=exp_Pr_tbl)
 	likMix = -resMixed$value
 	parMix = abs(resMixed$par)/sum(abs(resMixed$par))
-	cat("\nlogLikelihood Mixed model",likMix,"\t\n",file= output_summary_file,append=T)
+	cat("\nMixed_model",likMix,"\t\n",file= output_summary_file,append=T)
 	cat("\nSource\tcontribution\n",file= output_summary_file,append=T)
 	for (i in 1:dim2){
 		cat(colnames(exp_Pr_tbl)[i],parMix[i],"\n",file= output_summary_file,append=T,sep="\t")
@@ -156,7 +156,7 @@ run_provenance_estimation <- function(provenance_file,name_target_sample,n_point
 		cat("\nGenerating probability density plots...")
 		pdf(file=LSP_file,height=6,width=9)
 		for (s in sources){	
-			plot_LSP(tbl[tbl$Source==s,],target_sample_m,unif_samples,s,low_Y_axis=Y_axis[1],high_Y_axis=Y_axis[2],log=plot_Log,base_prob = baseline_uniform_pdf)
+			plot_LSP(tbl[tbl$Source==s,],target_sample_m,unif_samples,s,low_Y_axis=Y_axis[1],high_Y_axis=Y_axis[2],log_prob=plot_Log,base_prob = baseline_uniform_pdf)
 		}
 		n <- dev.off()
 		cat("done.")
@@ -206,7 +206,7 @@ run_provenance_estimation <- function(provenance_file,name_target_sample,n_point
 				Pr_for_plot = Pr_for_plot + Pr_source_i_list[[3]]
 			}
 			
-			minProb_plotted = -min(log(Pr_for_plot))*0.075
+			minProb_plotted = -min(log(Pr_for_plot[Pr_for_plot>0]))*0.075
 			Pr_for_plot[Pr_for_plot< exp(-minProb_plotted)]=exp(-minProb_plotted)
 			logPr_for_plot = log(Pr_for_plot)
 			minP = min(logPr_for_plot)
@@ -231,12 +231,8 @@ run_provenance_estimation <- function(provenance_file,name_target_sample,n_point
 		tbl_null=Pr_tbl*0
 		Pr_tbl_null = log(exp(Pr_tbl_null)+exp(Pr_tbl_null)*0.05)
 		tbl_null[Pr_tbl>(Pr_tbl_null)]=1
-	
 		zero_prob = which(apply(tbl_null,FUN=sum,1)==0)
-		cat("\n\nNote:",length(zero_prob), "samples are likely to come from unknown sources (5% threshold):\n", zero_prob,file=output_summary_file,append=T)	
-		cat("done.\nOutput saved in:",output_summary_file,sep=" ")	
-	
-	
+		cat("\n\n# Note:",length(zero_prob), "samples are likely to come from unknown sources (5% threshold):\n", zero_prob,file=output_summary_file,append=T)	
 	
 		# save table with log likelihoods per sample
 		write.table(Pr_tbl,file=log_lik_file,row.names = F, sep="\t",quote=F)
@@ -259,9 +255,9 @@ run_provenance_estimation <- function(provenance_file,name_target_sample,n_point
 		min_samples_per_source = min(table(tbl$Source))
 		Pr_tbl = NULL
 		if (calcProb==T){
-			cat("\nSource\tJackknife support\n",file= output_summary_file,append=T)
+			cat("\nSource\tJackknife_support\n",file= output_summary_file,append=T)
 		}else{
-			cat("\nSource\tJackknife support\n",file= output_summary_file,append=F)
+			cat("\nSource\tJackknife_support\n",file= output_summary_file,append=F)
 		}
 		for (bs_rep in 1:runJK){
 			if (bs_rep %% 10==0){print(bs_rep)}
