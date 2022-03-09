@@ -1,4 +1,6 @@
 # ProvenanceFinder
+[![DOI](https://zenodo.org/badge/90358039.svg)](https://zenodo.org/badge/latestdoi/90358039)
+
 
 ### The methods implemented in ProvenanceFinder are described here:
 
